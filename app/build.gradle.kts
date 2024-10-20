@@ -3,7 +3,7 @@ import java.util.*
 
 subprojects {
     apply {
-        from ("xxx.gradle.kts")
+        from("xxx.gradle.kts")
     }
 }
 apply {
@@ -13,10 +13,11 @@ apply {
  * 1.创建并注册一个任务
  */
 
-tasks.register("hello") {
+task("hello") {
     group = "task basic sample"
     description = "this is the first lovely task for showing case."
     doLast {
+        logger.quiet("===> logging")
         println("hello world ~")
     }
 }
@@ -64,7 +65,6 @@ val taskX by tasks.register("taskX") {
         println("taskX")
     }
 }
-
 val taskY by tasks.register("taskY") {
     group = "taskOrdering"
     doLast {
@@ -105,7 +105,7 @@ tasks.named("taskB") {
  * 6. task's input and output
  */
 
-abstract class RevertTextTask @Inject constructor(private val project: Project) : DefaultTask() {
+abstract class RevertTextTask : DefaultTask() {
     init {
         group = "input and out sample"
     }
@@ -128,16 +128,13 @@ abstract class RevertTextTask @Inject constructor(private val project: Project) 
 
 tasks.register<RevertTextTask>("revertTextTask") {
     inputTextFile = layout.projectDirectory.file("input.txt").asFile
-    val outFile = layout.projectDirectory.file("out.text")
-    if (outFile.asFile.exists().not()) {
-        outFile.asFile.createNewFile()
-    }
-    outputTextFile = layout.projectDirectory.file("out.text").asFile
+    outputTextFile = layout.buildDirectory.file("out.txt").get().asFile
 }
 
 
+
 /**
- * 7. task's 惰性
+ * 7. task's 惰性、隐式依赖
  */
 
 abstract class GenerateGreetingTask : DefaultTask() {
@@ -186,6 +183,8 @@ abstract class ReplyTask : DefaultTask() {
     @get:OutputFile
     abstract val replyFile: RegularFileProperty
 
+    abstract val dir: DirectoryProperty
+
     @TaskAction
     fun execute() {
         val greetingText = greetingFile.get().asFile.readText()
@@ -202,7 +201,6 @@ abstract class ReplyTask : DefaultTask() {
 
 
 tasks.register<ReplyTask>("replyTask") {
-
     greetingFile.set(greetingTask.get().greetingFile)
     replyFile.set(layout.projectDirectory.file("reply.text").asFile)
 }
@@ -212,11 +210,17 @@ tasks.register<ReplyTask>("replyTask") {
  * 8.增量测试
  * Disabling up-to-date checks
  */
-//@UntrackedTask(because = "time should refresh") //通过标注该注解。注明不UP-TO-DATE
+//@UntrackedTask(because = "time should refresh") //【注释 1】 ，通过标注该注解。注明不UP-TO-DATE
 abstract class LogTimeTask : DefaultTask() {
     init {
-        this.doNotTrackState("Instrumentation needs to re-run every time")
+        //this.doNotTrackState("Instrumentation needs to re-run every time") //【注释 2】
+
     }
+
+    @get:Input
+    abstract val timeString: Property<String> //【注释 3】
+
+    abstract val o:Property<String>
 
     @get:OutputFile
     abstract val outTimeFile: RegularFileProperty
@@ -224,48 +228,26 @@ abstract class LogTimeTask : DefaultTask() {
     @TaskAction
     fun execute() {
         outTimeFile.get().asFile.writeText(Date().time.toString())
+        println("log time execute ~")
     }
 }
 
 tasks.register<LogTimeTask>("logTime") {
-    outTimeFile.set(layout.projectDirectory.file("log-time.txt").asFile)
+    outTimeFile.set(layout.buildDirectory.file("log-time.txt"))
+    // timeString.set(Date().time.toString())
+    timeString.set("1234567")
 }
+
 
 
 /**
- * 9. 构建缓存
+ * 9. 自定义增量构建
  */
-@CacheableTask
-abstract class PrintHelloCoffee : DefaultTask() {
-    init {
-        group = "build  cache"
-    }
-
-    @get:OutputFile
-    abstract val coffeeDes: RegularFileProperty
-
-
-    @TaskAction
-    fun execute() {
-        coffeeDes.get().asFile.writeText("hello world !")
-    }
-}
-
-tasks.register<PrintHelloCoffee>("buildCache") {
-    coffeeDes.set(layout.buildDirectory.file("coffee.txt"))
-}
-
-
-/**
- * 10. 自定义增量构建
- */
-@CacheableTask
 abstract class IncrementalTask : DefaultTask() {
 
     @get:Incremental
     @get:InputDirectory
     // 当normalized path 的时候会取到什么
-    // 当
     @get:PathSensitive(PathSensitivity.NAME_ONLY)
     abstract val inputDir: DirectoryProperty
 
@@ -328,6 +310,31 @@ tasks.register<IncrementalTask>("incrementalTask")
 
 
 /**
+ * 10. 构建缓存
+ */
+@CacheableTask
+abstract class PrintHelloCoffee : DefaultTask() {
+    init {
+        group = "build  cache"
+    }
+
+
+    @get:OutputFile
+    abstract val coffeeDes: RegularFileProperty
+
+
+    @TaskAction
+    fun execute() {
+        coffeeDes.get().asFile.writeText("hello world !")
+    }
+}
+
+tasks.register<PrintHelloCoffee>("buildCache") {
+    coffeeDes.set(layout.buildDirectory.file("coffee.txt"))
+}
+
+
+/**
  * 11. skipped
  */
 tasks.register("skippedTask") {
@@ -355,6 +362,26 @@ abstract class NoSourceTask : DefaultTask() {
     }
 }
 tasks.register<NoSourceTask>("noSource") {
-
     outputFileName.set(layout.projectDirectory.file("x"))
+
 }
+class Person(val name: String, val age: Int)
+
+val container: NamedDomainObjectContainer<Person>? = null
+fun testContainer() {
+    //project.getExtensions().add("environments",serverEnvironmentContainer);
+    container?.all { p ->
+        println(p.name)
+        true
+    }
+}
+
+
+// test task copy
+
+tasks.register<Copy>("my_copy") {
+    from("input.txt")
+    into("input_copy.txt")
+}
+
+
